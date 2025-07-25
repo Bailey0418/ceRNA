@@ -1,4 +1,4 @@
-#TCGA数据下载
+#1.TCGA数据下载,得到RangedSummarizedExperiment（RSE）对象
 library(TCGAbiolinks)
 projects <- TCGAbiolinks::getGDCprojects()$project_id ##获取癌症名字
 projects <- projects[grepl('^TCGA', projects, perl=TRUE)]
@@ -35,9 +35,20 @@ sapply(projects, function(project){
                     data.category = "Transcriptome Profiling",
                     data.type = "miRNA Expression Quantification"
                     )
-  
   GDCdownload(query)
-  GDCprepare(query, save = T,save.filename = paste0(project,"_miRNA.rds"))
-  
+  GDCprepare(query, save = T,save.filename = paste0(project,"_miRNA.rds")) 
 })
 
+#2.整理表达矩阵
+library(SummarizedExperiment)
+load("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_COAD_mRNA.Rdata")
+assayNames(data)#差异使用unstranded；可视化，机器学习等使用fpkm_uq_unstrand
+colnames(rowData(data))
+expr <- assay(data, "unstranded")
+gene_info <- as.data.frame(rowData(data)[, c("gene_id", "gene_name", "gene_type")])
+if (!identical(rownames(expr), rownames(gene_info))) {
+  stop("表达矩阵和注释信息的行名不一致！")
+}
+expr_annotated <- cbind(gene_info, expr)
+lncRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "lncRNA", -1]
+protein_expr <- expr_annotated[expr_annotated[, "gene_type"] == "protein_coding", -1]
