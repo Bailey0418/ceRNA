@@ -50,5 +50,14 @@ if (!identical(rownames(expr), rownames(gene_info))) {
   stop("表达矩阵和注释信息的行名不一致！")
 }
 expr_annotated <- cbind(gene_info, expr)
-lncRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "lncRNA", -1]
+
 protein_expr <- expr_annotated[expr_annotated[, "gene_type"] == "protein_coding", -1]
+#lncRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "lncRNA", -1]
+library(dplyr)
+protein_expr_aggregated <- protein_expr %>%
+  group_by(gene_name) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE))
+protein_expression <- as.data.frame(protein_expr_aggregated)
+rownames(protein_expression) <- protein_expression$gene_name
+protein_expression <- protein_expression[, -1]
+write.csv(protein_expression,"COAD_protein_count.csv")
