@@ -1,0 +1,43 @@
+#TCGA数据下载
+library(TCGAbiolinks)
+projects <- TCGAbiolinks::getGDCprojects()$project_id ##获取癌症名字
+projects <- projects[grepl('^TCGA', projects, perl=TRUE)]
+projects <- c("TCGA-COAD","TCGA-READ")
+#mRNA与lncRNA
+sapply(projects, function(project){  
+  # 查询
+  query <- GDCquery(project = project,
+                    data.category = "Transcriptome Profiling",
+                    data.type = "Gene Expression Quantification",
+                    workflow.type = "STAR - Counts"
+                    )
+  # 下载
+  GDCdownload(query, method = "api", files.per.chunk = 100) #每次下载100个文件
+  # 整理
+  GDCprepare(query,save = T,save.filename = paste0(project,"_mRNA.rds"))
+  }
+  )
+#临床数据
+#unique(getResults(query, cols = "data_type")),确认data.type有几种，需要的话分别下载再合并处理
+sapply(projects, function(project){
+  query <- GDCquery(project = project,
+                    data.category = "Clinical", 
+                    data.type = "Clinical Supplement",
+                    data.format = "BCR XML")
+  GDCdownload(query)
+  clinical <- GDCprepare_clinic(query, clinical.info = "patient")
+  saveRDS(clinical,file = paste0(project,"_clinical.rds"))
+}
+)
+#miRNA
+sapply(projects, function(project){
+  query <- GDCquery(project = project,
+                    data.category = "Transcriptome Profiling",
+                    data.type = "miRNA Expression Quantification"
+                    )
+  
+  GDCdownload(query)
+  GDCprepare(query, save = T,save.filename = paste0(project,"_miRNA.rds"))
+  
+})
+
