@@ -52,7 +52,6 @@ if (!identical(rownames(expr), rownames(gene_info))) {
 expr_annotated <- cbind(gene_info, expr)
 
 protein_expr <- expr_annotated[expr_annotated[, "gene_type"] == "protein_coding", -1]
-#lncRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "lncRNA", -1]
 library(dplyr)
 protein_expr_aggregated <- protein_expr %>%
   group_by(gene_name) %>%
@@ -61,3 +60,81 @@ protein_expression <- as.data.frame(protein_expr_aggregated)
 rownames(protein_expression) <- protein_expression$gene_name
 protein_expression <- protein_expression[, -1]
 write.csv(protein_expression,"COAD_protein_count.csv")
+
+miRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "miRNA", -1]
+write.csv(miRNA_expr,"READ_miRNA_count.csv")
+
+#3.多癌症表达谱整合去批次+差异表达分析
+COAD_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01/COAD_protein_count.csv",row.names = 1)
+READ_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01/READ_protein_count.csv",row.names = 1)
+library(DESeq2)
+library(tidyverse)
+
+common_genes <- intersect(rownames(COAD_expr), rownames(READ_expr))
+combined_expr <- cbind(
+  COAD_expr[common_genes, ], 
+  READ_expr[common_genes, ])
+
+metadata <- data.frame(
+  sampleID = colnames(combined_expr),
+  # 根据数据来源确定癌症类型
+  cancerType = c(
+    rep("COAD", ncol(COAD_expr)),  # 来自COAD_expr的样本
+    rep("READ", ncol(READ_expr))   # 来自READ_expr的样本
+  ),
+  # 根据TCGA barcode确定样本类型
+  sampleType = ifelse(
+    substr(colnames(combined_expr), 14, 15) == "01", 
+    "Tumor", 
+    ifelse(
+      substr(colnames(combined_expr), 14, 15) == "11",
+      "Normal",
+      "Control"  # 其他类型（如细胞系）
+    )
+  ),
+  row.names = colnames(combined_expr)  # 设置行名为样本ID
+)
+#检查样本分布
+sample_distribution <- table(metadata$cancerType, metadata$sampleType)
+print(sample_distribution)
+# 保留肿瘤和正常样本
+valid_samples <- metadata %>% 
+  filter(sampleType %in% c("Tumor", "Normal")) %>%
+  rownames()
+combined_expr <- combined_expr[, valid_samples]
+metadata <- metadata[valid_samples, ]
+#error:Error in DESeqDataSet(se, design = design, ignoreRank) : 
+#  some values in assay are not integers
+any(combined_expr %% 1 != 0)  # 如果有TRUE值表示有小数
+# 转换为整数
+combined_expr_int <- apply(combined_expr, 2, function(x) as.integer(round(x)))
+rownames(combined_expr_int) <- rownames(combined_expr)
+
+dds <- DESeqDataSetFromMatrix(
+  countData = combined_expr_int,
+  colData = metadata,
+  design = ~ cancerType + sampleType  # 校正癌症类型差异
+)
+#过滤低表达基因（保留在至少10%样本中表达量≥10的基因）
+min_samples <- ceiling(0.1 * ncol(dds))  # 计算最小样本数
+keep <- rowSums(counts(dds) >= 10) >= min_samples#miRNA表达量较低，这个阈值改为5（或更小）
+dds <- dds[keep, ]
+#差异表达分析
+dds <- DESeq(dds)
+#error：Error in estimateSizeFactorsForMatrix(counts(object), locfunc = locfunc,  : 
+  every gene contains at least one zero, cannot compute log geometric means
+dds <- estimateSizeFactors(dds, type = "poscounts")  # 用正计数估计标准化因子
+dds <- DESeq(dds, sfType = "poscounts")  # 显式指定 size factor 类型
+#获取肿瘤vs正常结果
+results <- results(
+  dds, 
+  contrast = c("sampleType", "Tumor", "Normal"),
+  alpha = 0.05,
+  lfcThreshold = 1  # 设置最小log2FC阈值
+)
+sig_results <- as.data.frame(results) %>%
+  mutate(gene = rownames(.)) %>%
+  filter(padj < 0.05 & !is.na(padj)) %>%
+  arrange(padj, desc(abs(log2FoldChange)))
+write.csv(sig_results, "CRC_Tumor_vs_Normal_DEGs.csv", row.names = FALSE)
+saveRDS(dds, "CRC_DESeq2_object.rds")
