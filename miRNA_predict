@@ -45,11 +45,12 @@ corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
 write.csv(corresult1,"miRNA_mRNA_cor.csv")
 
 
-#2.starbase预测miRNA的靶lncRNA
-#下载所有miRNA-lncRNA关系对
+#2.starbase预测miRNA的靶基因
+#下载所有miRNA-mRNA/lncRNA/circRNA关系对
 （bash）curl 'https://rnasysu.com/encori/api/miRNATarget/?assembly=hg38&geneType=lncRNA&miRNA=all&clipExpNum=1&degraExpNum=0&pancancerNum=0&programNum=0&target=all&cellType=all' > ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt
-starbase = data.table::fread("ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
-dim(starbase)
-a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/miRNA_mRNA_mirtarbase.csv")
+
+a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv")
 a <- unique(a$mature_mirna_acc)
 lnc_mi = starbase[starbase$miRNAid %in% a,]
+starbase = data.table::fread("ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
+dim(starbase)
