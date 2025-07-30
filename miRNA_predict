@@ -2,12 +2,13 @@
 #预测miRNA靶基因
 library(multiMiR)
 a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv")
-mirna_list_fixed <- paste0("hsa-", tolower(gsub("MIR", "miR-", a$gene)))
+mirna_list_fixed <- paste0("hsa-", tolower(gsub("MIR", "mir-", a$gene)))
 print(mirna_list_fixed)
 
 # 查询所有预测和验证数据库的靶基因（mRNA）
-res <- get_multimir(mirna = mirna_list_fixed, 
-                    table = "all",  # "predicted", "validated", "all"
+res <- get_multimir(mirna = mirna_list_fixed,
+                    org = "hsa",
+                    table = "validated",  # "predicted", "validated", "all"
                     summary = FALSE)
 res_df <- res@data
 predicted_df <- subset(res_df, database %in% c("targetscan", "mirdb", "pictar", "miranda"))#预测的靶点
@@ -35,10 +36,20 @@ for(i in 1:ncol(a1)){
     g=g+1
     print(g)
   }
-  saveRDS(corresult,file = "miRNA_mRNA_cor.Rdata")
+  saveRDS(corresult,file = "miRNA_mRNA_cor.rds")
 }
 p <- as.data.frame(corresult$P,romnames = rownames(corresult))
 FDR <- p.adjust(p$`corresult$P`,method = "BH")
 corresult$FDR <- FDR
-corresult1 <- corresult[which(corresult$R < -0.25 & corresult$P < 0.05), ]
+corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
 write.csv(corresult1,"miRNA_mRNA_cor.csv")
+
+
+#2.starbase预测miRNA的靶lncRNA
+#下载所有miRNA-lncRNA关系对
+（bash）curl 'https://rnasysu.com/encori/api/miRNATarget/?assembly=hg38&geneType=lncRNA&miRNA=all&clipExpNum=1&degraExpNum=0&pancancerNum=0&programNum=0&target=all&cellType=all' > ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt
+starbase = data.table::fread("ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
+dim(starbase)
+a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/miRNA_mRNA_mirtarbase.csv")
+a <- unique(a$mature_mirna_acc)
+lnc_mi = starbase[starbase$miRNAid %in% a,]
