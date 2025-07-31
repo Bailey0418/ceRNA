@@ -19,9 +19,13 @@ write.csv(validated_df,"miRNA_mRNA_mirtarbase.csv")
 miRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_miRNA_count.csv",row.names = 1)
 mRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_mRNA_count.csv",row.names = 1)
 all(colnames(mRNA_count) == colnames(miRNA_count))#返回TRUE则样本名与顺序均一致
-a1 <- as.matrix(miRNA_count)
+common_samples <- intersect(colnames(miRNA_count), colnames(mRNA_count))
+mRNA_count_matched <- mRNA_count[, common_samples]
+miRNA_count_matched <- miRNA_count[, common_samples]
+
+a1 <- as.matrix(miRNA_count_matched)
 a1 <- t(a1)
-a2 <- as.matrix(mRNA_count)
+a2 <- as.matrix(mRNA_count_matched)
 a2 <- t(a2)
 corresult<-data.frame(gene=character(0),lnc=character(0),
                       pair=character(0),R=numeric(0),
