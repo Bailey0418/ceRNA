@@ -65,7 +65,7 @@ miRNA_expr <- expr_annotated[expr_annotated[, "gene_type"] == "miRNA", -1]
 write.csv(miRNA_expr,"READ_miRNA_count.csv")
 
 #3.miRNAcount矩阵
-load("load("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_READ_miRNA.Rdata") ")
+load("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_READ_miRNA.Rdata")
 cols <- colnames(data)
 miRNA_ID <- data$miRNA_ID
 count_cols <- grep("^read_count_", cols, value = TRUE)
