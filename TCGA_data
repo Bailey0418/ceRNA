@@ -78,7 +78,7 @@ count_matrix_df <- cbind(miRNA_ID = rownames(count_matrix_df), count_matrix_df)
 head(count_matrix_df)
 write.csv(count_matrix_df,"/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/READ_miRNA_count.csv")
 
-#3.多癌症表达谱整合去批次+差异表达分析
+#4.多癌症表达谱整合去批次+差异表达分析
 COAD_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01/COAD_protein_count.csv",row.names = 1)
 READ_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01/READ_protein_count.csv",row.names = 1)
 library(DESeq2)
