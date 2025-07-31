@@ -122,6 +122,7 @@ any(combined_expr %% 1 != 0)  # 如果有TRUE值表示有小数
 # 转换为整数
 combined_expr_int <- apply(combined_expr, 2, function(x) as.integer(round(x)))
 rownames(combined_expr_int) <- rownames(combined_expr)
+write.csv(combined_expr_int,"/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_miRNA.csv")
 
 dds <- DESeqDataSetFromMatrix(
   countData = combined_expr_int,
