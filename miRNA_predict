@@ -1,33 +1,57 @@
-#1.multiMiR预测miRNA的靶mRNA
-#预测miRNA靶基因
+#一.multiMiR预测miRNA的靶mRNA
+#1.预测miRNA靶基因
 library(multiMiR)
-a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv")
-mirna_list_fixed <- paste0("hsa-", tolower(gsub("MIR", "mir-", a$gene)))
-print(mirna_list_fixed)
-
+a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv",row.names = 1)
+a <- a$gene
 # 查询所有预测和验证数据库的靶基因（mRNA）
-res <- get_multimir(mirna = mirna_list_fixed,
+res <- get_multimir(mirna = a,
                     org = "hsa",
                     table = "validated",  # "predicted", "validated", "all"
                     summary = FALSE)
 res_df <- res@data
-predicted_df <- subset(res_df, database %in% c("targetscan", "mirdb", "pictar", "miranda"))#预测的靶点
-validated_df <- subset(res_df, database %in% c("mirtarbase", "tarbase"))#实验验证的靶点,来源为mirtarbase数据库
-write.csv(validated_df,"miRNA_mRNA_mirtarbase.csv")
+table(res_df$database)
+#predicted_df <- subset(res_df, database %in% c("targetscan", "mirdb", "pictar", "miranda"))#预测的靶点
+write.csv(res_df,"miRNA_mRNA_mirtarbase.csv")
+b <- unique(res_df$target_symbol)
+corresult <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/miRNA_mRNA_cor.csv",row.names = 1)
+corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
+c <- unique(corresult1$lnc)
+d <- intersect(b,c)
+pair <- subset(res_df,res_df$target_symbol %in% d)
+write.csv(pair,"miRNA_mRNA_pair.csv")
 
-#计算miRNA与mRNA相关性
+#2.starbase预测miRNA的靶基因
+#下载所有miRNA-mRNA/lncRNA/circRNA关系对
+（bash）curl 'https://rnasysu.com/encori/api/miRNATarget/?assembly=hg38&geneType=lncRNA&miRNA=all&clipExpNum=1&degraExpNum=0&pancancerNum=0&programNum=0&target=all&cellType=all' > ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt
+starbase = data.table::fread("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
+dim(starbase)
+lnc_mi = starbase[starbase$miRNAid %in% a,]#准确匹配
+lnc_mi <- starbase[sapply(starbase$miRNAname, function(x) any(grepl(x = x, pattern = paste0("^", a, collapse = "|")))), ]#模糊匹配，使用这个
+
+
+#3.计算miRNA与mRNA相关性（miRNA与mRNA样本命名方式不同，需要处理）
 miRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_miRNA_count.csv",row.names = 1)
 mRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_mRNA_count.csv",row.names = 1)
-all(colnames(mRNA_count) == colnames(miRNA_count))#返回TRUE则样本名与顺序均一致
+colnames(miRNA_count) <- substr(gsub("\\.", "-", colnames(miRNA_count)), 1, 15)
+colnames(mRNA_count)  <- substr(gsub("\\.", "-", colnames(mRNA_count)), 1, 15)
 common_samples <- intersect(colnames(miRNA_count), colnames(mRNA_count))
-mRNA_count_matched <- mRNA_count[, common_samples]
-miRNA_count_matched <- miRNA_count[, common_samples]
+metadata <- data.frame(
+  sampleID = common_samples,
+  sampleType = ifelse(
+    substr(common_samples, 14, 15) == "01", "Tumor",
+    ifelse(substr(common_samples, 14, 15) == "11", "Normal", "Other")
+  ),
+  row.names = common_samples
+)
+table(metadata$sampleType)
+miRNA_expr <- miRNA_count[, common_samples]
+mRNA_expr  <- mRNA_count[, common_samples]
 
-a1 <- as.matrix(miRNA_count_matched)
+a1 <- as.matrix(miRNA_expr)
 a1 <- t(a1)
-a2 <- as.matrix(mRNA_count_matched)
+a2 <- as.matrix(mRNA_expr)
 a2 <- t(a2)
-corresult<-data.frame(gene=character(0),lnc=character(0),
+corresult<-data.frame(miRNA=character(0),mRNA=character(0),
                       pair=character(0),R=numeric(0),
                       P=numeric(0))
 g=1
@@ -47,23 +71,4 @@ FDR <- p.adjust(p$`corresult$P`,method = "BH")
 corresult$FDR <- FDR
 corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
 write.csv(corresult1,"miRNA_mRNA_cor.csv")
-
-
-#2.starbase预测miRNA的靶基因
-#下载所有miRNA-mRNA/lncRNA/circRNA关系对
-（bash）curl 'https://rnasysu.com/encori/api/miRNATarget/?assembly=hg38&geneType=lncRNA&miRNA=all&clipExpNum=1&degraExpNum=0&pancancerNum=0&programNum=0&target=all&cellType=all' > ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt
-
-pre_mirna <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv")
-pre_mirna <- unique(pre_mirna$gene)
-library(miRBaseConverter)
-
-
-
-
-
-
-
-starbase = data.table::fread("ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
-dim(starbase)
-lnc_mi = starbase[starbase$miRNAid %in% a,]
 
