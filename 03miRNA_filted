@@ -1,1 +1,129 @@
+#1.获得备选miRNA
+miRNA_mRNA<- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/02miRNA_pred/miRNA-mRNA/miRNA_mRNA_pair.csv")
+miRNA_lncRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/02miRNA_pred/miRNA-lncRNA/miRNA_lncRNA_pair.csv")
+miRNA <- intersect(unique(miRNA_mRNA$mature_mirna_id),unique(miRNA_lncRNA$ID))
 
+#2.整理临床数据
+COAD_cli <- readRDS("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_COAD_clinical.rds")
+READ_cli <- readRDS("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_READ_clinical.rds")
+library(dplyr)
+library(stringr)
+clinical_raw <- bind_rows(COAD_cli, READ_cli)
+clinical_raw <- clinical_raw[,c("bcr_patient_barcode","tumor_tissue_site","histological_type","gender","days_to_birth","days_to_last_known_alive","days_to_death","days_to_last_followup","stage_event_pathologic_stage","stage_event_tnm_categories")]
+clinical_raw$patient_id <- substr(clinical_raw$bcr_patient_barcode, 1, 12)
+clinical_clean <- clinical_raw %>%
+  mutate(
+    # 提取 TNM 分类（如 T3N0M1b）
+    tnm_all = stage_event_tnm_categories,
+    T = str_extract(tnm_all, "T[^N]+"),
+    N = str_extract(tnm_all, "N[^M]+"),
+    M = str_extract(tnm_all, "M[0-9a-zA-Z]+"),
+
+    # 年龄由天数计算（向下取整到整数岁）
+    age = floor(abs(as.numeric(days_to_birth)) / 365.25),
+
+    # 生存时间优先用 days_to_death，其次是 days_to_last_followup / last_known_alive
+    OS.time = case_when(
+      !is.na(days_to_death) ~ as.numeric(days_to_death),
+      !is.na(days_to_last_followup) ~ as.numeric(days_to_last_followup),
+      !is.na(days_to_last_known_alive) ~ as.numeric(days_to_last_known_alive),
+      TRUE ~ NA_real_
+    ),
+    # 生存状态（0 = 活着, 1 = 死亡）
+    OS.status = ifelse(!is.na(days_to_death), 1, 0)
+  ) %>%
+  select(
+    patient_id,
+    gender,
+    age,
+    stage = stage_event_pathologic_stage,
+    T, N, M,
+    OS.time,
+    OS.status
+  ) %>%
+  distinct(patient_id, .keep_all = TRUE)
+write.csv(clinical_clean,"CRC_cli.csv")
+
+#3.单因素cox分析筛选miRNA
+miRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/03miRNA_filted/miRNA.csv",row.names = 1)
+count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01count+DEG/CRC_miRNA.csv",row.names = 1)
+clinical_raw <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/03miRNA_filted/CRC_cli.csv",row.names = 1)
+miRNA$x <- gsub("R", "r", miRNA$x)
+expr_subset <- count[rownames(count) %in% miRNA$x, ]
+expr_samples <- colnames(expr_subset)
+expr_samples_dash <- gsub("\\.", "-", expr_samples)
+expr_barcodes <- substr(expr_samples_dash, 1, 12)
+head(expr_barcodes)
+colnames(expr_subset) <- expr_barcodes
+common_patients <- intersect(expr_barcodes, clinical_raw$patient_id)
+length(common_patients)
+
+expr <- expr_subset[, colnames(expr_subset) %in% common_patients]
+expr <- expr[, common_patients]
+cli <- clinical_raw[clinical_raw$patient_id %in% common_patients,]
+rownames(cli) <- cli$patient_id
+
+expr_t <- as.data.frame(t(expr))
+all(rownames(expr_t) == rownames(cli))
+cox_data <- merge(expr_t, cli, by = "row.names", all = T)
+write.csv(cox_data,"cox_data.csv")
+
+library(survival)
+library(dplyr)
+library(tibble)
+clinical_cols <- colnames(cli)
+mirna_cols <- setdiff(colnames(cox_data), clinical_cols)
+cox_results <- lapply(mirna_cols, function(mirna) {
+  formula <- as.formula(paste("Surv(OS.time, OS.status) ~ `", mirna, "`", sep = ""))
+  fit <- coxph(formula, data = cox_data)
+  summary_fit <- summary(fit) 
+  tibble(
+    miRNA = mirna,
+    HR = summary_fit$coef[1, "exp(coef)"],
+    lower_CI = summary_fit$conf.int[1, "lower .95"],
+    upper_CI = summary_fit$conf.int[1, "upper .95"],
+    p_value = summary_fit$coef[1, "Pr(>|z|)"]
+  )
+})
+cox_df <- bind_rows(cox_results)
+cox_df_sorted <- arrange(cox_df, p_value)
+head(cox_df_sorted)
+write.csv(cox_df_sorted,"miRNA_cox_df_sorted.csv")
+
+library(ggplot2)
+plot_data <- cox_df_sorted %>%
+  mutate(
+    miRNA = factor(miRNA, levels = rev(miRNA))  # 反转顺序，便于从上到下显示
+  )
+p1 <- ggplot(plot_data, aes(x = HR, y = miRNA)) +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbarh(aes(xmin = lower_CI, xmax = upper_CI), height = 0.3, color = "grey50") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  scale_x_log10() +
+  geom_text(aes(label = paste0("p=", signif(p_value, 2))), hjust = -0.2, size = 3.5) +
+  theme_minimal() +
+  xlab("Hazard Ratio (log scale)") +
+  ylab("") +
+  ggtitle("Top miRNA Survival Associations (Univariate Cox)") +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.text = element_text(size = 10)
+  )
+ggsave("forest_plot.pdf", plot = p1, width = 10, height = 6)
+
+library(ggplot2)
+library(survival)
+library(survminer)
+cox_data <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/03miRNA_filted/cox_data.csv",row.names = 1)
+mirna_of_interest <- "hsa.mir.3909"#不知道为什么-变成.了
+cox_data$expression_group <- ifelse(
+  cox_data[[mirna_of_interest]] > median(cox_data[[mirna_of_interest]], na.rm = TRUE),
+  "High", "Low"
+)
+fit <- survfit(Surv(OS.time, OS.status) ~ expression_group, data = cox_data)
+p2 <- ggsurvplot(fit, data = cox_data,
+           pval = TRUE,
+           risk.table = TRUE,
+           title = "hsa_mir_3909",
+           palette = c("red", "blue"))
+ggsave("KM.pdf", plot = p2$plot, width = 6, height = 6)
