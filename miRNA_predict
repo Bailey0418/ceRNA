@@ -20,16 +20,32 @@ d <- intersect(b,c)
 pair <- subset(res_df,res_df$target_symbol %in% d)
 write.csv(pair,"miRNA_mRNA_pair.csv")
 
-#2.starbase预测miRNA的靶基因
+#2.starbase预测miRNA的靶基因（lncRNA的话不太全）
 #下载所有miRNA-mRNA/lncRNA/circRNA关系对
 （bash）curl 'https://rnasysu.com/encori/api/miRNATarget/?assembly=hg38&geneType=lncRNA&miRNA=all&clipExpNum=1&degraExpNum=0&pancancerNum=0&programNum=0&target=all&cellType=all' > ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt
 starbase = data.table::fread("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/ENCORI_hg38_CLIPseq_all_miRNA_lncRNA.txt")
 dim(starbase)
+a <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_DE_miRNA.csv",row.names = 1)
+a <- a$gene
 lnc_mi = starbase[starbase$miRNAid %in% a,]#准确匹配
 lnc_mi <- starbase[sapply(starbase$miRNAname, function(x) any(grepl(x = x, pattern = paste0("^", a, collapse = "|")))), ]#模糊匹配，使用这个
+b <- unique(lnc_mi$miRNAname)
+corresult <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-lncRNA/miRNA_lncRNA_cor.csv",row.names = 1)
+corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
+c <- unique(corresult1$lnc)
+d <- intersect(b,c)
 
+#3.使用miRNet预测lncRNA，网页构建网络后下载数据
+miRNA_lncRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-lncRNA/mirnet_mir_target.csv")
+a <- unique(a$Target)
+corresult <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-lncRNA/miRNA_lncRNA_cor.csv",row.names = 1)
+corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
+c <- unique(corresult1$lnc)
+d <- intersect(a,c)
+pair <- subset(miRNA_lncRNA,miRNA_lncRNA$Target %in% d)
+write.csv(pair,"miRNA_lncRNA_pair.csv")
 
-#3.计算miRNA与mRNA相关性（miRNA与mRNA样本命名方式不同，需要处理）
+#4.计算miRNA与mRNA相关性（miRNA与mRNA样本命名方式不同，需要处理）
 miRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_miRNA_count.csv",row.names = 1)
 mRNA_count <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/miRNA_pred/miRNA-mRNA/DE_mRNA_count.csv",row.names = 1)
 colnames(miRNA_count) <- substr(gsub("\\.", "-", colnames(miRNA_count)), 1, 15)
