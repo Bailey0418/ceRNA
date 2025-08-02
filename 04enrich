@@ -1,0 +1,6 @@
+#GSEA 富集分析，重点关注血管生成相关通路
+#1.
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(msigdbr)
+library(dplyr)
