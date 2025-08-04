@@ -1,5 +1,40 @@
-#GSEA 富集分析，重点关注血管生成相关通路
-#1.
+#miRNA高/低表达分组的GSEA富集分析，重点关注miRNA对血管生成相关通路的影响
+#1.miRNA高/低表达并求差异基因
+miRNA_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/04enrich/GSEA/CRC_miRNA_expr.csv",row.names = 1)
+mRNA_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/04enrich/GSEA/CRC_mRNA_expr.csv",row.names = 1)
+library(DESeq2)
+library(dplyr)
+miR3909_exp <- miRNA_expr["hsa-mir-3909", ]
+miR3909_exp <- as.numeric(miR3909_exp)
+names(miR3909_exp) <- colnames(miRNA_expr)
+
+group <- ifelse(miR3909_exp > median(miR3909_exp), "high", "low")
+group <- factor(group, levels = c("low", "high"))  # 保持顺序一致
+
+group_df <- data.frame(group = group)
+rownames(group_df) <- names(miR3909_exp)
+
+common_samples <- intersect(colnames(mRNA_expr), rownames(group_df))
+mRNA_expr_sub <- mRNA_expr[, common_samples]
+group_df_sub <- group_df[common_samples, , drop = FALSE] 
+
+countData <- round(as.matrix(mRNA_expr_sub))
+rownames(countData)  # 确认基因名在行
+colnames(countData)  # 确认样本名在列
+all(rownames(group_df) == colnames(countData)) #应返回TRUE
+
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = group_df,
+                              design = ~ group)
+dds <- DESeq(dds)
+results <- results(
+  dds, 
+  alpha = 0.05,
+  lfcThreshold = 1  # 设置最小log2FC阈值
+)
+write.csv(results, "CRC_miRNA_DEGs.csv", row.names = FALSE)
+
+#2.GSEA分析与可视化
 library(clusterProfiler)
 library(org.Hs.eg.db)
 library(msigdbr)
@@ -10,13 +45,7 @@ angiogenesis_gene_set <- msigdb %>%
   filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
   dplyr::select(gs_name, gene_symbol)
 
-gene_df <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01count+DEG/CRC_DE_mRNA.csv",row.names = 1)
-miRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/03miRNA_filted/hsa-miR-3909_mRNA.csv",row.names = 1)
-gene_df$gene <- as.character(gene_df$gene)
-target_genes <- unique(miRNA$target_symbol)
-targeted_gene_df <- gene_df[gene_df$gene %in% target_genes, ]
-head(targeted_gene_df)
-
+gene_df <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/04enrich/GSEA/DE_sig_results.csv",row.names = 1)
 geneList <- gene_df$log2FoldChange
 names(geneList) <- gene_df$gene
 geneList <- sort(geneList, decreasing = TRUE)
