@@ -4,3 +4,31 @@ library(clusterProfiler)
 library(org.Hs.eg.db)
 library(msigdbr)
 library(dplyr)
+
+msigdb <- msigdbr(species = "Homo sapiens", category = "H")
+angiogenesis_gene_set <- msigdb %>%
+  filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
+  dplyr::select(gs_name, gene_symbol)
+
+gene_df <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/01count+DEG/CRC_DE_mRNA.csv",row.names = 1)
+miRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/03miRNA_filted/hsa-miR-3909_mRNA.csv",row.names = 1)
+gene_df$gene <- as.character(gene_df$gene)
+target_genes <- unique(miRNA$target_symbol)
+targeted_gene_df <- gene_df[gene_df$gene %in% target_genes, ]
+head(targeted_gene_df)
+
+geneList <- gene_df$log2FoldChange
+names(geneList) <- gene_df$gene
+geneList <- sort(geneList, decreasing = TRUE)
+head(geneList)
+
+gsea_result <- GSEA(
+  geneList = geneList,
+  TERM2GENE = angiogenesis_gene_set,
+  pvalueCutoff = 1)
+
+library(enrichplot)
+library(ggplot2)
+p1 <- gseaplot2(gsea_result, geneSetID = "HALLMARK_ANGIOGENESIS",
+          title = "GSEA of Angiogenesis Pathway (miR-3909)")
+ggsave("/mnt/raid5/User/wangmingwei/Projects/GSEA.pdf", plot = p1, width = 6, height = 6)
