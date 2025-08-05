@@ -10,15 +10,9 @@ names(miR3909_exp) <- colnames(miRNA_expr)
 
 group <- ifelse(miR3909_exp > median(miR3909_exp), "high", "low")
 group <- factor(group, levels = c("low", "high"))  # 保持顺序一致
-
 group_df <- data.frame(group = group)
-rownames(group_df) <- names(miR3909_exp)
 
-common_samples <- intersect(colnames(mRNA_expr), rownames(group_df))
-mRNA_expr_sub <- mRNA_expr[, common_samples]
-group_df_sub <- group_df[common_samples, , drop = FALSE] 
-
-countData <- round(as.matrix(mRNA_expr_sub))
+countData <- round(as.matrix(mRNA_expr))
 rownames(countData)  # 确认基因名在行
 colnames(countData)  # 确认样本名在列
 all(rownames(group_df) == colnames(countData)) #应返回TRUE
@@ -27,12 +21,8 @@ dds <- DESeqDataSetFromMatrix(countData = countData,
                               colData = group_df,
                               design = ~ group)
 dds <- DESeq(dds)
-results <- results(
-  dds, 
-  alpha = 0.05,
-  lfcThreshold = 1  # 设置最小log2FC阈值
-)
-write.csv(results, "CRC_miRNA_DEGs.csv", row.names = FALSE)
+results <- results(dds)
+write.csv(results, "CRC_mRNA_DEGs.csv", row.names = TRUE)
 
 #2.GSEA分析与可视化
 library(clusterProfiler)
@@ -45,9 +35,9 @@ angiogenesis_gene_set <- msigdb %>%
   filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
   dplyr::select(gs_name, gene_symbol)
 
-gene_df <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/04enrich/GSEA/DE_sig_results.csv",row.names = 1)
+gene_df <- read.csv("/mnt/raid5/User/wangmingwei/Projects/bailin/CRC_mRNA_DEGs.csv",row.names = 1)
 geneList <- gene_df$log2FoldChange
-names(geneList) <- gene_df$gene
+names(geneList) <- rownames(gene_df)
 geneList <- sort(geneList, decreasing = TRUE)
 head(geneList)
 
@@ -55,9 +45,10 @@ gsea_result <- GSEA(
   geneList = geneList,
   TERM2GENE = angiogenesis_gene_set,
   pvalueCutoff = 1)
+write.csv(gsea_result,"miRNA_group_gsea.csv")
 
 library(enrichplot)
 library(ggplot2)
 p1 <- gseaplot2(gsea_result, geneSetID = "HALLMARK_ANGIOGENESIS",
           title = "GSEA of Angiogenesis Pathway (miR-3909)")
-ggsave("/mnt/raid5/User/wangmingwei/Projects/GSEA.pdf", plot = p1, width = 6, height = 6)
+ggsave("/mnt/raid5/User/wangmingwei/Projects/bailin/GSEA.pdf", plot = p1, width = 6, height = 6)
