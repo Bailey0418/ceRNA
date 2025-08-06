@@ -25,18 +25,17 @@ library(GSVA)
 library(limma)
 library(msigdbr)
 library(GSEABase)
+library(dplyr)
 fpkm <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA/CRC_mRNA_fpkm.csv",row.names = 1)
 expr <- log2(fpkm + 1)
 expr <- as.matrix(expr)
 
 msigdb <- msigdbr(species = "Homo sapiens", category = "H")
-angiogenesis_gene_set <- msigdb %>%
+angiogenesis_gene_set <- msigdbr(species = "Homo sapiens", category = "H") %>%
   filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
-  dplyr::select(gs_name, gene_symbol)
-
-gsva_result <- gsva(expr = expr, 
-                    gset.idx.list = angiogenesis_gene_set,
-                    method = "gsva",
-                    kcdf = "Gaussian",     # 对 FPKM 使用 Gaussian
-                    mx.diff = TRUE,
-                    verbose = TRUE)
+  pull(gene_symbol) %>%
+  list(HALLMARK_ANGIOGENESIS = .)
+gsvapar <- gsvaParam(expr, angiogenesis_gene_set, maxDiff=TRUE)
+gsva_es <- gsva(gsvapar)
+head(gsva_es)
+write.csv(gsva_es,"GSVA_res.csv")
