@@ -1,0 +1,42 @@
+#1.count矩阵转为fpkm矩阵
+library(edgeR)
+library(biomaRt)
+count <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/CRC_mRNA.csv",row.names = 1)
+mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+gene_info <- getBM(attributes = c("hgnc_symbol", "gene_biotype", "transcript_length"),
+                   filters = "hgnc_symbol",
+                   values = rownames(counts),
+                   mart = mart)
+library(dplyr)
+gene_length_df <- gene_info %>%
+  group_by(hgnc_symbol) %>%
+  summarise(gene_length = mean(transcript_length)) %>%
+  filter(!is.na(gene_length))
+counts <- counts[rownames(counts) %in% gene_length_df$hgnc_symbol, ]
+gene_length <- gene_length_df$gene_length[match(rownames(counts), gene_length_df$hgnc_symbol)]
+
+dge <- DGEList(counts = counts)
+dge <- calcNormFactors(dge)
+fpkm <- rpkm(dge, gene.length = gene_length)
+write.csv(fpkm,"CRC_mRNA_fpkm.csv")
+
+#2.
+library(GSVA)
+library(limma)
+library(msigdbr)
+library(GSEABase)
+fpkm <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA/CRC_mRNA_fpkm.csv",row.names = 1)
+expr <- log2(fpkm + 1)
+expr <- as.matrix(expr)
+
+msigdb <- msigdbr(species = "Homo sapiens", category = "H")
+angiogenesis_gene_set <- msigdb %>%
+  filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
+  dplyr::select(gs_name, gene_symbol)
+
+gsva_result <- gsva(expr = expr, 
+                    gset.idx.list = angiogenesis_gene_set,
+                    method = "gsva",
+                    kcdf = "Gaussian",     # 对 FPKM 使用 Gaussian
+                    mx.diff = TRUE,
+                    verbose = TRUE)
