@@ -4,12 +4,14 @@ miRNA_lncRNA <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/
 miRNA <- intersect(unique(miRNA_mRNA$mature_mirna_id),unique(miRNA_lncRNA$ID))
 
 #2.整理临床数据
-COAD_cli <- readRDS("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_COAD_clinical.rds")
-READ_cli <- readRDS("/mnt/raid5/User/bailin/project/250725COAD+READ/data/TCGA_READ_clinical.rds")
+COAD_cli <- readRDS("/mnt/raid5/User/bailin/Project/250725COAD+READ/data/TCGA_COAD_clinical.rds")
+READ_cli <- readRDS("/mnt/raid5/User/bailin/Project/250725COAD+READ/data/TCGA_READ_clinical.rds")
 library(dplyr)
 library(stringr)
+READ_cli$cancer_type <- "READ"
+COAD_cli$cancer_type <- "COAD"
 clinical_raw <- bind_rows(COAD_cli, READ_cli)
-clinical_raw <- clinical_raw[,c("bcr_patient_barcode","tumor_tissue_site","histological_type","gender","days_to_birth","days_to_last_known_alive","days_to_death","days_to_last_followup","stage_event_pathologic_stage","stage_event_tnm_categories")]
+clinical_raw <- clinical_raw[,c("bcr_patient_barcode","tumor_tissue_site","cancer_type","histological_type","gender","days_to_birth","days_to_last_known_alive","days_to_death","days_to_last_followup","stage_event_pathologic_stage","stage_event_tnm_categories")]
 clinical_raw$patient_id <- substr(clinical_raw$bcr_patient_barcode, 1, 12)
 clinical_clean <- clinical_raw %>%
   mutate(
@@ -34,6 +36,7 @@ clinical_clean <- clinical_raw %>%
   ) %>%
   select(
     patient_id,
+    cancer_type,
     gender,
     age,
     stage = stage_event_pathologic_stage,
