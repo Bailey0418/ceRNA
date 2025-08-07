@@ -35,7 +35,70 @@ angiogenesis_gene_set <- msigdbr(species = "Homo sapiens", category = "H") %>%
   filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
   pull(gene_symbol) %>%
   list(HALLMARK_ANGIOGENESIS = .)
+#（1）GSVA
 gsvapar <- gsvaParam(expr, angiogenesis_gene_set, maxDiff=TRUE)
 gsva_es <- gsva(gsvapar)
 head(gsva_es)
 write.csv(gsva_es,"GSVA_res.csv")
+#(2)ssgsea
+ssGSEA_param <- ssgseaParam(
+  exprData = expr,  # 输入矩阵格式的表达谱数据
+  geneSets = angiogenesis_gene_set,    # 输入准备好的基因集
+  minSize = 1,             # 纳入分析的最小基因集包含的基因数目
+  maxSize = Inf,           # 超过此值，该基因集则不会被纳入分析，Inf为无上限
+  alpha = 0.25,            # ssGSEA的权重，如果不理解此参数，可查看原理篇中的ssGSEA
+  normalize = TRUE       # 是否对输入的表达谱矩阵进行归一化：最小值和最大值之间的绝对差值对分数进行归一
+)
+ssGSEA_mat <- gsva(ssGSEA_param, verbose = TRUE)
+ssGSEA_result <- as.data.frame(ssGSEA_mat)
+write.csv(ssGSEA_result,"ssGSEA_res.csv")
+#3.使用最佳cutoff对患者分组并分析预后差异
+#统一样本名格式
+library(dplyr)
+library(stringr)
+gsva_es <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA/GSVA_res.csv",row.names = 1)
+cli <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/03miRNA_filted/CRC_cli.csv",row.names = 1)
+full_ids <- str_replace_all(colnames(gsva_es), "\\.", "-")
+sample_info <- data.frame(
+  full_id = full_ids,
+  patient_id = substr(full_ids, 1, 12)
+)
+unique_samples <- sample_info[!duplicated(sample_info$patient_id), ]
+gsva_unique <- gsva_es[, colnames(gsva_es) %in% str_replace_all(unique_samples$full_id, "-", "\\.")]
+colnames(gsva_unique) <- unique_samples$patient_id
+
+angio_score <- data.frame(
+  patient_id = colnames(gsva_unique),
+  AngioScore = as.numeric(gsva_unique["HALLMARK_ANGIOGENESIS", ])
+)
+cli2 <- cli %>%
+  inner_join(angio_score, by = "patient_id")
+
+#cutoff分组
+library(survival)
+library(survminer)
+cut <- surv_cutpoint(cli2,
+                     time = "OS.time",
+                     event = "OS.status",
+                     variables = "AngioScore")
+summary(cut)
+p1 <- plot(cut, "AngioScore", palette = "npg")
+cutoff_plot <- p1$AngioScore$plot
+ggsave("cutoff.pdf", plot = cutoff_plot, width = 6, height = 6)
+
+#绘制生存KM
+cutoff <- cut$cutpoint$cutpoint
+cli2$AngioGroup <- ifelse(cli2$AngioScore > cutoff, "High", "Low")
+cli2$AngioGroup <- factor(cli2$AngioGroup, levels = c("Low", "High"))
+surv_obj <- Surv(time = cli2$OS.time, event = cli2$OS.status)
+fit <- survfit(surv_obj ~ AngioGroup, data = cli2)
+p_km <- ggsurvplot(
+  fit,
+  data = cli2,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  legend.title = "Angiogenesis",
+  legend.labs = c("Low", "High"),
+  palette = "npg"
+)
