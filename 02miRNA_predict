@@ -88,3 +88,14 @@ corresult$FDR <- FDR
 corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
 write.csv(corresult1,"miRNA_mRNA_cor.csv")
 
+#热图
+cor <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/02miRNA_pred/miRNA-mRNA/miRNA_mRNA_cor.csv",row.names =1 )
+library(reshape2)
+library(pheatmap)
+miRNA_list <- c("hsa-mir-451a","hsa-mir-346","hsa-mir-421","hsa-mir-429","hsa-mir-133b","hsa-mir-760","hsa-mir-577","hsa-mir-326","hsa-mir-496","hsa-mir-1270","hsa-mir-4525","hsa-mir-151b","hsa-mir-3909")
+cor_filtered <- subset(cor, cor$gene %in% miRNA_list)
+head(cor_filtered)
+cor_matrix <- dcast(cor, miRNA ~ mRNA, value.var = "R")
+row.names(cor_matrix) <- cor_matrix$miRNA
+cor_matrix <- cor_matrix[,-1] # 去掉 miRNA 列
+head(cor_matrix)
