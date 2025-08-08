@@ -130,7 +130,7 @@ p2 <- ggsurvplot(
   pval = TRUE,
   conf.int = TRUE,
   risk.table = TRUE,
-  legend.title = "Angiogenesis",
+  legend.title = "hsa-mir-3909",
   legend.labs = c("Low", "High"),
   palette = "npg"
 )
