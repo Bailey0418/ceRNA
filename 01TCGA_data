@@ -123,11 +123,14 @@ metadata <- metadata[valid_samples, ]
 #combined_expr_int <- apply(combined_expr, 2, function(x) as.integer(round(x)))
 #rownames(combined_expr_int) <- rownames(combined_expr)
 
+#去批次前后PCA图
 expr_before <- combined_expr
 pca_before <- PCA(t(expr_before), graph = FALSE)
+color_vec <- c("COAD" = "#4DBBD5", "READ" = "#E64B35")  # 按需修改标签
 p1 <- fviz_pca_ind(pca_before, 
              geom.ind = "point",
              col.ind = metadata$cancerType, # 按癌症类型着色
+             palette = color_vec,
              legend.title = "Cancer Type") +
   ggtitle("PCA Before Batch Correction")
 ggsave("PCA Before Batch Correction.pdf",plot = p1,width = 6,height = 6)
@@ -137,12 +140,13 @@ library(limma)
 batch <- metadata$cancerType  # 或者你有更细致的batch信息
 expr_corrected <- removeBatchEffect(expr_before, batch = batch)
 pca_after <- PCA(t(expr_corrected), graph = FALSE)
-fviz_pca_ind(pca_after, 
+p2 <- fviz_pca_ind(pca_after, 
              geom.ind = "point",
              col.ind = metadata$cancerType,
+             palette = color_vec,
              legend.title = "Cancer Type") +
   ggtitle("PCA After Batch Correction")
-ggsave("PCA After Batch Correction.pdf",plot = p1,width = 6,height = 6)
+ggsave("PCA After Batch Correction.pdf",plot = p2,width = 6,height = 6)
 write.csv(combined_expr_int,"/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_miRNA.csv")
 
 #差异表达分析
@@ -174,3 +178,28 @@ sig_results <- as.data.frame(results) %>%
   arrange(pvalue, desc(abs(log2FoldChange)))
 write.csv(sig_results, "CRC_Tumor_vs_Normal_DEGs.csv", row.names = FALSE)
 saveRDS(dds, "CRC_DESeq2_object.rds")
+
+#火山图
+library(ggplot2)
+library(readr)
+deg <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/CRC_DE_miRNA.csv")
+deg$Significance <- "Not Significant"
+deg$Significance[deg$log2FoldChange > 1 & deg$pvalue < 0.05] <- "Up"
+deg$Significance[deg$log2FoldChange < -1 & deg$pvalue < 0.05] <- "Down"
+
+top_up <- deg %>% filter(Significance == "Up") %>% arrange(pvalue) %>% head(10)
+top_down <- deg %>% filter(Significance == "Down") %>% arrange(pvalue) %>% head(10)
+top_genes <- rbind(top_up, top_down)
+
+p3 <- ggplot(deg, aes(x = log2FoldChange, y = -log10(pvalue), color = Significance)) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = c("Up" = "#E64B35", "Down" = "#4DBBD5", "Not Significant" = "gray")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_text_repel(data = top_genes, aes(label = gene), size = 3, box.padding = 0.5) +
+  theme_minimal() +
+  labs(title = "Volcano Plot of DEGs",
+       x = "log2(Fold Change)",
+       y = "-log10(p-value)",
+       color = "Significance")
+ggsave("DE_miRNA.pdf",plot = p3,width = 6,height = 6)
