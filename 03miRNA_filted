@@ -124,9 +124,14 @@ cox_data$expression_group <- ifelse(
   "High", "Low"
 )
 fit <- survfit(Surv(OS.time, OS.status) ~ expression_group, data = cox_data)
-p2 <- ggsurvplot(fit, data = cox_data,
-           pval = TRUE,
-           risk.table = TRUE,
-           title = "hsa_mir_3909",
-           palette = c("red", "blue"))
+p2 <- ggsurvplot(
+  fit,
+  data = cox_data,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  legend.title = "Angiogenesis",
+  legend.labs = c("Low", "High"),
+  palette = "npg"
+)
 ggsave("KM.pdf", plot = p2$plot, width = 6, height = 6)
