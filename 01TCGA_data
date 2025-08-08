@@ -78,8 +78,8 @@ head(count_matrix_df)
 write.csv(count_matrix_df,"/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/READ_miRNA_count.csv")
 
 #4.多癌症表达谱整合去批次+差异表达分析
-COAD_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/COAD_miRNA_count.csv",row.names = 1)
-READ_expr <- read.csv("/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/READ_miRNA_count.csv",row.names = 1)
+COAD_expr <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/COAD_miRNA_count.csv",row.names = 1)
+READ_expr <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/READ_miRNA_count.csv",row.names = 1)
 library(DESeq2)
 library(tidyverse)
 
@@ -118,12 +118,34 @@ combined_expr <- combined_expr[, valid_samples]
 metadata <- metadata[valid_samples, ]
 #error:Error in DESeqDataSet(se, design = design, ignoreRank) : 
 #  some values in assay are not integers
-any(combined_expr %% 1 != 0)  # 如果有TRUE值表示有小数
+#any(combined_expr %% 1 != 0)  # 如果有TRUE值表示有小数
 # 转换为整数
-combined_expr_int <- apply(combined_expr, 2, function(x) as.integer(round(x)))
-rownames(combined_expr_int) <- rownames(combined_expr)
+#combined_expr_int <- apply(combined_expr, 2, function(x) as.integer(round(x)))
+#rownames(combined_expr_int) <- rownames(combined_expr)
+
+expr_before <- combined_expr
+pca_before <- PCA(t(expr_before), graph = FALSE)
+p1 <- fviz_pca_ind(pca_before, 
+             geom.ind = "point",
+             col.ind = metadata$cancerType, # 按癌症类型着色
+             legend.title = "Cancer Type") +
+  ggtitle("PCA Before Batch Correction")
+ggsave("PCA Before Batch Correction.pdf",plot = p1,width = 6,height = 6)
+
+#去批次
+library(limma)
+batch <- metadata$cancerType  # 或者你有更细致的batch信息
+expr_corrected <- removeBatchEffect(expr_before, batch = batch)
+pca_after <- PCA(t(expr_corrected), graph = FALSE)
+fviz_pca_ind(pca_after, 
+             geom.ind = "point",
+             col.ind = metadata$cancerType,
+             legend.title = "Cancer Type") +
+  ggtitle("PCA After Batch Correction")
+ggsave("PCA After Batch Correction.pdf",plot = p1,width = 6,height = 6)
 write.csv(combined_expr_int,"/mnt/raid5/User/bailin/project/250725COAD+READ/result/count+DEG/CRC_miRNA.csv")
 
+#差异表达分析
 dds <- DESeqDataSetFromMatrix(
   countData = combined_expr_int,
   colData = metadata,
