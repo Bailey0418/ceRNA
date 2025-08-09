@@ -124,6 +124,8 @@ metadata <- metadata[valid_samples, ]
 #rownames(combined_expr_int) <- rownames(combined_expr)
 
 #去批次前后PCA图
+library(FactoMineR)
+library(factoextra)
 expr_before <- combined_expr
 pca_before <- PCA(t(expr_before), graph = FALSE)
 color_vec <- c("COAD" = "#4DBBD5", "READ" = "#E64B35")  # 按需修改标签
