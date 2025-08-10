@@ -88,14 +88,53 @@ corresult$FDR <- FDR
 corresult1 <- corresult[which(corresult$R < 0 & corresult$P < 0.05), ]
 write.csv(corresult1,"miRNA_mRNA_cor.csv")
 
-#热图
-cor <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/02miRNA_pred/miRNA-mRNA/miRNA_mRNA_cor.csv",row.names =1 )
-library(reshape2)
+#关键miRNA绘制表达热图
+library(dplyr)
+data <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/CRC_miRNA.csv", row.names = 1, check.names = FALSE)
+cli <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/06Immune/CRC_cli.csv", stringsAsFactors = FALSE, row.names = 1)
+miRNA <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/03miRNA_filted/miRNA_list.csv",row.names =1)
+data <- subset(data,row.names(data) %in% miRNA$x)
+
+#1.整理表达与临床数据
+expr_samples <- colnames(data)
+extract_patient_id <- function(x) {
+  parts <- unlist(strsplit(x, "\\."))
+  paste(parts[1], parts[2], parts[3], sep = "-")
+}
+expr_patient_ids <- sapply(expr_samples, extract_patient_id)
+
+common_patient_ids <- intersect(expr_patient_ids, cli$patient_id)
+expr_common_index <- which(expr_patient_ids %in% common_patient_ids)
+common_samples <- expr_samples[expr_common_index]
+common_patient_ids <- expr_patient_ids[expr_common_index]
+
+data_common <- data[, expr_common_index]
+cli_common_expanded <- cli[match(common_patient_ids, cli$patient_id), ]
+cli_common_expanded$sample_name <- common_samples
+get_sample_type <- function(x) {
+  code <- substr(x, 14, 15)
+  ifelse(code == "01", "Tumor", ifelse(code == "11", "Normal", NA))
+}
+cli_common_expanded$sample_type <- get_sample_type(common_samples)
+rownames(cli_common_expanded) <- common_samples
+head(cli_common_expanded)
+head(data_common[, 1:6])
+write.csv(cli_common_expanded,"/mnt/raid5/User/bailin/Project/250725COAD+READ/result/06Immune/CRC_cli.csv")
+write.csv(data_common,"/mnt/raid5/User/bailin/Project/250725COAD+READ/result/02miRNA_pred/net/heatmap_count.csv")
+
+#2，绘制热图
 library(pheatmap)
-miRNA_list <- c("hsa-mir-451a","hsa-mir-346","hsa-mir-421","hsa-mir-429","hsa-mir-133b","hsa-mir-760","hsa-mir-577","hsa-mir-326","hsa-mir-496","hsa-mir-1270","hsa-mir-4525","hsa-mir-151b","hsa-mir-3909")
-cor_filtered <- subset(cor, cor$gene %in% miRNA_list)
-head(cor_filtered)
-cor_matrix <- dcast(cor, miRNA ~ mRNA, value.var = "R")
-row.names(cor_matrix) <- cor_matrix$miRNA
-cor_matrix <- cor_matrix[,-1] # 去掉 miRNA 列
-head(cor_matrix)
+library(ggplot2)
+data_log2 <- log2(data_common + 1)
+data_scaled <- t(scale(t(data_log2)))
+annotation_col <- cli_common_expanded[, c("sample_type", "cancer_type", "gender", "T", "N", "M")]
+rownames(annotation_col) <- colnames(data_scaled)
+p1 <- pheatmap(data_scaled,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         annotation_col = annotation_col,
+         show_colnames = FALSE,
+         show_rownames = TRUE, 
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         fontsize_row = 9)
+ggsave("miRNA_heatmap.pdf",plot = p1,width = 8,height = 6)
