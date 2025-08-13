@@ -1,0 +1,73 @@
+#1.使用RPM表达谱
+miRNA <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/01count+DEG/CRC_miRNA.csv",row.names = 1)
+library_sizes <- colSums(miRNA)
+rpm_matrix <- t( t(miRNA) / library_sizes ) * 1e6
+rpmlog_matrix <- log2(rpm_matrix + 1)
+head(rpmlog_matrix[, 1:6])
+write.csv(rpmlog_matrix,"miRNA_rpmlog.csv")
+
+#2.准备数据
+miRNA <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA+COX/COX/miRNA_rpmlog.csv",row.names = 1)
+expr_SNHG17 <- lncRNA["SNHG17", ]
+expr_miR3909 <- miRNA["hsa-mir-3909", ]
+expr_CCBE1 <- mRNA["CCBE1",]
+
+get_sample_id <- function(colnames_vector) {
+  sapply(strsplit(colnames_vector, "\\."), function(x) {
+    paste(x[1:4], collapse = "-")
+  })
+}
+
+id_SNHG17 <- get_sample_id(colnames(expr_SNHG17))
+colnames(expr_SNHG17) <- id_SNHG17
+id_miR3909 <- get_sample_id(colnames(expr_miR3909))
+colnames(expr_miR3909) <- id_miR3909
+id_CCBE1 <- get_sample_id(colnames(expr_CCBE1))
+colnames(expr_CCBE1) <- id_CCBE1
+common_ids <- intersect(id_SNHG17, id_miR3909)
+
+expr_SNHG17_sub <- expr_SNHG17[, common_ids]
+expr_miR3909_sub <- expr_miR3909[, common_ids]
+expr_CCBE1_sub <- expr_CCBE1[, common_ids]
+expr_merged <- rbind(expr_SNHG17_sub, expr_miR3909_sub, expr_CCBE1_sub)
+write.csv(expr_merged,"cox_rpmlog.csv")
+
+#3.表达谱与cli样本名统一
+cli <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA+COX/GSVA/GSVA_cli2.csv",row.names = 1)
+get_sample_id <- function(colnames_vector) {
+  sapply(strsplit(colnames_vector, "\\-"), function(x) {
+    paste(x[1:3], collapse = "-")
+  })
+}
+colnames(expr_merged) <- get_sample_id(colnames(expr_merged))
+clinical_samples <- cli$patient_id
+common_samples_final <- intersect(colnames(expr_merged), clinical_samples)
+
+write.csv(expr_final, "expr_SNHG17_miR3909_CCBE1_matched.csv", quote = FALSE)
+write.csv(cli_final, "clinical_matched.csv", quote = FALSE)
+
+#4.多因素cox
+library(survival)
+library(survminer)
+expr_t <- t(expr_final)  # 行：样本，列：基因
+data_cox <- merge(cli_final, expr_t, by.x = "patient_id", by.y = "row.names")
+head(data_cox)
+
+cox_formula <- as.formula("Surv(OS.time, OS.status) ~ SNHG17 + `hsa-mir-3909` + CCBE1")
+cox_model <- coxph(cox_formula, data = data_cox)
+summary(cox_model)
+
+coef_values <- coef(cox_model)
+coef_values
+median_score <- median(data_cox$risk_score)
+data_cox$risk_group <- ifelse(data_cox$risk_score >= median_score, "High", "Low")
+
+fit <- survfit(Surv(OS.time, OS.status) ~ risk_group, data = data_cox)
+ggsurvplot(fit, data = data_cox, pval = TRUE, risk.table = TRUE)
+
+library(timeROC)
+roc_res <- timeROC(T = data_cox$OS.time, delta = data_cox$OS.status,
+                   marker = data_cox$risk_score, cause = 1,
+                   times = c(365, 1095, 1825), # 1年、3年、5年
+                   iid = TRUE)
+plot(roc_res, time = 365)
