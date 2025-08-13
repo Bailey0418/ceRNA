@@ -8,7 +8,7 @@ miR3909_exp <- miRNA_expr["hsa-mir-3909", ]
 miR3909_exp <- as.numeric(miR3909_exp)
 names(miR3909_exp) <- colnames(miRNA_expr)
 
-group <- ifelse(miR3909_exp > median(miR3909_exp), "high", "low")
+group <- ifelse(miR3909_exp > median(_exp), "high", "low")
 group <- factor(group, levels = c("low", "high"))  # 保持顺序一致
 group_df <- data.frame(group = group)
 
@@ -22,7 +22,7 @@ dds <- DESeqDataSetFromMatrix(countData = countData,
                               design = ~ group)
 dds <- DESeq(dds)
 results <- results(dds)
-write.csv(results, "CRC_mRNA_DEGs.csv", row.names = TRUE)
+write.csv(results, "CRC_miR3909_DEGs.csv", row.names = TRUE)
 
 #2.GSEA分析与可视化
 library(clusterProfiler)
@@ -34,6 +34,11 @@ msigdb <- msigdbr(species = "Homo sapiens", category = "H")
 angiogenesis_gene_set <- msigdb %>%
   filter(gs_name == "HALLMARK_ANGIOGENESIS") %>%
   dplyr::select(gs_name, gene_symbol)
+
+#本地输入msigdb文件
+gmt_file <- "C:/Users/28678/Desktop/新建文件夹/GSEA/HALLMARK_ANGIOGENESIS.v2025.1.Hs.gmt"
+angiogenesis_gene_set <- read.gmt(gmt_file)
+head(angiogenesis_gene_set)
 
 gene_df <- read.csv("/mnt/raid5/User/wangmingwei/Projects/bailin/CRC_mRNA_DEGs.csv",row.names = 1)
 geneList <- gene_df$log2FoldChange
@@ -49,6 +54,6 @@ write.csv(gsea_result,"miRNA_group_gsea.csv")
 
 library(enrichplot)
 library(ggplot2)
-p1 <- gseaplot2(gsea_result, geneSetID = "HALLMARK_ANGIOGENESIS",
+p1 <- gseaplot2(gsea_result, geneSetID = "HALLMARK_ANGIOGENESIS",pvalue_table = T,
           title = "GSEA of Angiogenesis Pathway (miR-3909)")
 ggsave("/mnt/raid5/User/wangmingwei/Projects/bailin/GSEA.pdf", plot = p1, width = 6, height = 6)
