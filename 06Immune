@@ -78,3 +78,21 @@ ggplot(df_filtered, aes(cell_type, gene)) +
 dev.off()
 
 #2.免疫检查点相关性
+library(fgsea)
+gene_sets <- gmtPathways('/mnt/raid5/User/bailin/Project/250725COAD+READ/result/06Immune/gene_signatures.gmt')
+icp_genes <- gene_sets$Checkpoint_inhibition
+mRNA_expr <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA+COX/COX/mRNA_rpmlog.csv",row.names = 1)
+icp_expr <- mRNA_expr[rownames(mRNA_expr) %in% icp_genes, ]
+gene_expr <- read.csv("/mnt/raid5/User/bailin/Project/250725COAD+READ/result/05GSVA+COX/COX/expr_SNHG17_miR3909_CCBE1_matched.csv",row.names = 1)
+colnames(gene_expr) <- substr(colnames(gene_expr), 1, 12)
+colnames(icp_expr)  <- substr(colnames(icp_expr), 1, 12)
+gene_expr <- gene_expr[, !duplicated(colnames(gene_expr))]
+icp_expr  <- icp_expr[, !duplicated(colnames(icp_expr))]
+common_samples <- intersect(colnames(gene_expr), colnames(icp_expr))
+gene_expr <- gene_expr[, common_samples]
+icp_expr  <- icp_expr[, common_samples]
+identical(colnames(gene_expr), colnames(icp_expr))
+gene_expr <- t(gene_expr)
+icp_expr <- t(icp_expr)
+identical(rownames(gene_expr), rownames(icp_expr))
+
