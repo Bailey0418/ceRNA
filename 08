@@ -1,0 +1,17 @@
+library(dplyr)
+library(stringr)
+library(TCGAbiolinks)
+COAD <- readRDS("/bioccWL/Student/bailin/Project/260223_bulk/data/TCGA-COAD_clinical.rds")
+READ <- readRDS("/bioccWL/Student/bailin/Project/260223_bulk/data/TCGA-READ_clinical.rds")
+
+clinical_raw <- bind_rows(COAD, READ)
+survival_data <- TCGAanalyze_SurvivalData(
+  clinical_data = clinical_raw,
+  clusterCol = "bcr_patient_barcode", # 指定病人ID列
+  main = "TCGA COADREAD Survival",
+  legend = "Stratification",
+  conf.int = FALSE,
+  pvalue = FALSE,
+  risk.table = FALSE
+)
+
