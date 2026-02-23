@@ -1,17 +1,143 @@
 library(dplyr)
 library(stringr)
-library(TCGAbiolinks)
-COAD <- readRDS("/bioccWL/Student/bailin/Project/260223_bulk/data/TCGA-COAD_clinical.rds")
-READ <- readRDS("/bioccWL/Student/bailin/Project/260223_bulk/data/TCGA-READ_clinical.rds")
+library(tidyr)
+file_path_COAD <- "/bioccWL/Student/bailin/Project/260223_bulk/result/01_cox/TCGA-COAD.clinical.tsv.gz"
+file_path_READ <- "/bioccWL/Student/bailin/Project/260223_bulk/result/01_cox/TCGA-READ.clinical.tsv.gz"
+COAD_clinical_xena <- read.delim(file_path_COAD, header = TRUE, sep = "	", stringsAsFactors = FALSE)
+READ_clinical_xena <- read.delim(file_path_READ, header = TRUE, sep = "	", stringsAsFactors = FALSE)
+clinical_combined_xena <- bind_rows(COAD_clinical_xena, READ_clinical_xena)
 
-clinical_raw <- bind_rows(COAD, READ)
-survival_data <- TCGAanalyze_SurvivalData(
-  clinical_data = clinical_raw,
-  clusterCol = "bcr_patient_barcode", # 指定病人ID列
-  main = "TCGA COADREAD Survival",
-  legend = "Stratification",
-  conf.int = FALSE,
-  pvalue = FALSE,
-  risk.table = FALSE
-)
+final_clinical_xena <- clinical_combined_xena %>%
+  # 选择并重命名我们需要的列，这样后续代码更清晰
+  transmute(
+    Barcode_long = sample,
+    Status_raw = vital_status.demographic,
+    Time_death = as.numeric(days_to_death.demographic),
+    Time_followup = as.numeric(days_to_last_follow_up.diagnoses),
+    Age = as.numeric(age_at_index.demographic),
+    Gender_raw = gender.demographic,
+    Stage_raw = ajcc_pathologic_stage.diagnoses
+  ) %>%
+  
+  # --- 核心处理逻辑 ---
+  mutate(
+    # 1. 创建统一的生存状态: Dead=1, Alive=0
+    Status = ifelse(Status_raw == "Dead", 1, 0),
+    
+    # 2. 创建统一的生存时间：如果死亡，用死亡时间；如果存活，用随访时间
+    Time = ifelse(Status == 1, Time_death, Time_followup),
+    
+    # 3. 统一性别格式为大写
+    Gender = toupper(Gender_raw),
+    
+    # 4. 归并分期 (Stage I, II, III, IV)
+    Stage = case_when(
+      str_detect(Stage_raw, "Stage IV") ~ "Stage IV",   # 先抓 IV (包含 IVA, IVB)
+      str_detect(Stage_raw, "Stage III") ~ "Stage III", # 再抓 III (包含 IIIA, IIIB, IIIC)
+      str_detect(Stage_raw, "Stage II") ~ "Stage II",   # 再抓 II (包含 IIA, IIB, IIC)
+      str_detect(Stage_raw, "Stage I") ~ "Stage I",     # 最后抓 I (包含 IA)
+      TRUE ~ NA_character_
+    )
+  ) %>%
 
+  # --- 过滤缺失值和异常值 ---
+  filter(
+    !is.na(Time), Time > 0,              # 生存时间必须是有效正数
+    !is.na(Status),
+    !is.na(Age),
+    Gender %in% c("MALE", "FEMALE"),
+    !is.na(Stage)                        # 确保分期是有效的 (I, II, III, IV)
+  ) %>%
+
+  # --- 标准化病人ID并去重 ---
+  # TCGA样本ID (TCGA-XX-XXXX-01A) 的前12位代表一个病人
+  # 我们取前12位，然后对病人ID去重，确保每个病人只有一条临床记录
+  mutate(Barcode = substr(Barcode_long, 1, 12)) %>%
+  distinct(Barcode, .keep_all = TRUE) %>%
+
+  # --- 最终选择并整理列的顺序 ---
+  dplyr::select(
+    Barcode,
+    Time,
+    Status,
+    Age,
+    Gender,
+    Stage
+  )
+write.csv(final_clinical_xena,"final_clinical_xena.csv")
+
+library(dplyr)
+library(tibble)
+cox_rpmlog <- read.csv("cox_rpmlog.csv",row.names = 1)
+expr_clean <- cox_rpmlog[!is.na(rownames(cox_rpmlog)), ] # 去除行名是 NA 的
+expr_clean <- na.omit(expr_clean) # 去除包含 NA 值的行
+expr_t <- as.data.frame(t(expr_clean))
+rownames(expr_t) <- gsub("\\.", "-", rownames(expr_t))
+expr_t$Barcode_ID <- substr(rownames(expr_t), 1, 12)
+colnames(expr_t) <- gsub("-", "_", colnames(expr_t))
+head(expr_t)
+
+clinical_data_for_merge <- final_clinical_xena %>%
+  mutate(Barcode_ID = substr(Barcode, 1, 12)) 
+merged_data <- inner_join(clinical_data_for_merge, expr_t, by = "Barcode_ID")
+dim(merged_data) 
+head(merged_data)
+write.csv(merged_data,"merged_data.csv")
+
+library(survival)
+library(survminer)
+cox_data_numeric <- merged_data %>%
+  mutate(
+    # 1. 处理性别：FEMALE -> 0, MALE -> 1
+    # 注意：一定要确认你的数据里只有这两种，或者先转因子
+    Gender_num = ifelse(Gender == "MALE", 1, 0),
+    
+    # 2. 处理分期：Stage I -> 1, Stage II -> 2, ...
+    # 我们先定义因子的顺序，再强制转为数字
+    Stage_factor = factor(Stage, levels = c("Stage I", "Stage II", "Stage III", "Stage IV")),
+    Stage_num = as.numeric(Stage_factor) 
+  )
+
+# 检查一下转换是否正确
+print("--- 检查数值化后的数据 ---")
+head(select(cox_data_numeric, Stage, Stage_num, Gender, Gender_num))
+
+
+# --- 第二步：运行多因素 Cox 回归 (使用数值变量) ---
+# 注意：这里我们用 Stage_num 和 Gender_num 代替原来的 Stage 和 Gender
+multi_cox_model_simple <- coxph(Surv(Time, Status) ~ 
+                                  SNHG17 + 
+                                  hsa_mir_3909 + 
+                                  CCBE1 + 
+                                  Age + 
+                                  Gender_num + 
+                                  Stage_num, 
+                                data = cox_data_numeric)
+
+
+# --- 第三步：生成你想要的简洁表格 ---
+final_result_table <- tidy(multi_cox_model_simple, exponentiate = TRUE, conf.int = TRUE) %>%
+  dplyr::select(
+    Variable = term,              # 变量名
+    HR = estimate,                # 风险比
+    Lower_CI = conf.low,          # 95% CI 下限
+    Upper_CI = conf.high,         # 95% CI 上限
+    P_Value = p.value             # P值
+  ) %>%
+  # 修改变量名，让表格更好看
+  mutate(
+    Variable = recode(Variable, 
+                      "Gender_num" = "Gender (Male vs Female)",
+                      "Stage_num" = "Stage (Trend)",
+                      "hsa_mir_3909" = "hsa-mir-3909" # 如果需要改回原名
+    ),
+    # 保留3位小数
+    HR = round(HR, 3),
+    Lower_CI = round(Lower_CI, 3),
+    Upper_CI = round(Upper_CI, 3),
+    P_Value = round(P_Value, 3),
+    # 合并 CI 为一列
+    `HR (95% CI)` = paste0(HR, " (", Lower_CI, " - ", Upper_CI, ")")
+  ) %>%
+  dplyr::select(Variable, `HR (95% CI)`, P_Value)
+write.csv(final_result_table, "simple_multivariate_cox.csv", row.names = FALSE)
